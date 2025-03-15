@@ -1,74 +1,86 @@
 pipeline {
     agent any
-    
-    tools{
-        
-        jdk 'jdk17'
+    tools {
+        jdk 'jdk21'
+        maven 'maven3'  
     }
     
     environment {
-        
-        SCANNER_HOME= tool 'sonar-scanner'
+        SCANNER_HOME = tool 'sonar-scanner'
     }
-
+    
     stages {
-        stage('Git Checkout ') {
+        stage('Git checkout') {
             steps {
-                git 'https://github.com/srikanth62/DotNet-ssk.git'
+                git branch: 'main', url: 'https://github.com/srikanth62/DotNet-ssk.git'
             }
         }
         
-        stage('OWASP Dependency Check') {
+        stage('Compile') {
             steps {
-                dependencyCheck additionalArguments: ' --scan ./ ', odcInstallation: 'DC'
-                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                sh 'mvn compile'
             }
         }
         
-        stage('Trivy FS SCan') {
+        stage('Test') {
             steps {
-                sh "trivy fs ."
+                sh 'mvn test -DskipTests=true'
             }
         }
         
-        stage('Sonarqube Analysis') {
+        stage('OWASP scan') {
             steps {
-                
-                withSonarQubeEnv('sonar'){
-                  sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=dotnet-demo \
-                    -Dsonar.projectKey=dotnet-demo ''' 
-               }
-                
-               
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'DC'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
         
-        stage('Docker Build & Tag') {
+        stage('Trivy FS Scan') {
             steps {
-                script{
-                    withDockerRegistry(credentialsId: 'docker-cred') {
-                        sh "make image"
-                    }
+                sh 'trivy fs .'
+            }
+        }
+        
+        stage('SonarQube analysis') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh '''
+                    $SCANNER_HOME/bin/sonar-scanner \
+                    -Dsonar.projectName=Ekart \
+                    -Dsonar.projectKey=Ekart \
+                    -Dsonar.java.binaries=.
+                    '''
                 }
             }
         }
         
-        stage('Docker Push') {
+        stage('Build') {
             steps {
-                script{
-                    withDockerRegistry(credentialsId: 'docker-cred') {
-                        sh "make push"
-                    }
+                sh 'mvn package -DskipTests=true'
+            }
+        }
+        
+        stage('Build & Tag Docker Image') {
+            steps {
+                withDockerRegistry([credentialsId: 'docker-cred', url: 'https://index.docker.io/v1/']) {
+                    sh 'docker build -t shopping-cart:dev -f docker/Dockerfile .'  
+                    sh 'docker tag shopping-cart:dev ssistu92/shopping-cart:dev'
                 }
             }
         }
         
-        stage('Docker Deploy') {
+        stage('Push Docker Image') {
             steps {
-                sh "docker run -d -p 5000:5000 adijaiswal/dotnet-demoapp"
+                withDockerRegistry([credentialsId: 'docker-cred', url: 'https://index.docker.io/v1/']) {
+                    sh 'docker push ssistu92/shopping-cart:dev'  
+                }
             }
         }
         
-        
+        stage('Deploy in Docker Container') {
+            steps {
+                sh 'docker run -d -p 5000:5000 ssistu92/shopping-cart:dev'  
+            }
+        }
     }
 }
