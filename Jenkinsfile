@@ -14,7 +14,7 @@ pipeline {
     stages {
         stage('Git Checkout ') {
             steps {
-                git 'https://github.com/jaiswaladi246/DotNet-DEMO.git'
+                git 'https://github.com/srikanth62/DotNet-ssk.git'
             }
         }
         
